@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Services</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        body {
+            min-height: 100vh;
+            background: #0d1117;
+        }
+        .hero {
+            background: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+            border-bottom: 1px solid #21262d;
+        }
+        .card {
+            background: #161b22;
+            border: 1px solid #21262d;
+        }
+        .service-count {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #58a6ff, #3fb950);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .pulse-dot {
+            position: relative;
+        }
+        .pulse-dot::before {
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #3fb950;
+            margin-right: 6px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .htmx-settling tr {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .refresh-spin {
+            animation: spin 0.6s linear;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .table { margin-bottom: 0; }
+        .table th { border-top: none; color: #8b949e; font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        code { color: #58a6ff; background: none; }
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline-block; }
+        .btn-group .btn { border-color: #30363d; }
+        .btn-group .btn:hover { z-index: 1; }
+    </style>
+</head>
+<body>
+    <div class="hero py-4">
+        <div class="container">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <h1 class="h3 mb-1 text-light">Local Services</h1>
+                    <p class="text-secondary mb-0">Monitoring ports 8000&ndash;9999</p>
+                </div>
+                <div class="text-end">
+                    <div class="service-count" id="service-count">{{len .}}</div>
+                    <small class="text-secondary">active</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container py-4">
+        <div class="card rounded-3 overflow-hidden">
+            <div class="card-header bg-transparent border-bottom border-dark d-flex align-items-center justify-content-between py-3">
+                <span class="text-secondary fw-semibold">Running Services</span>
+                <div class="d-flex align-items-center gap-2">
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="auto-refresh" checked>
+                        <label class="form-check-label text-secondary small" for="auto-refresh">Auto-refresh</label>
+                    </div>
+                    <button class="btn btn-sm btn-outline-secondary" id="refresh-btn"
+                            hx-get="/services" hx-target="#service-list" hx-swap="innerHTML settle:200ms">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16" id="refresh-icon">
+                            <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+                            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+                        </svg>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+            <div id="service-list"
+                 hx-get="/services"
+                 hx-trigger="load"
+                 hx-swap="innerHTML settle:200ms">
+                <div class="text-center text-muted py-5">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let refreshInterval = null;
+        const REFRESH_MS = 5000;
+
+        function startAutoRefresh() {
+            stopAutoRefresh();
+            refreshInterval = setInterval(() => {
+                htmx.trigger('#service-list', 'htmx:trigger');
+                document.getElementById('service-list').setAttribute('hx-trigger', 'load');
+                htmx.ajax('GET', '/services', {target: '#service-list', swap: 'innerHTML settle:200ms'});
+            }, REFRESH_MS);
+        }
+
+        function stopAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
+        }
+
+        const toggle = document.getElementById('auto-refresh');
+        toggle.addEventListener('change', () => {
+            toggle.checked ? startAutoRefresh() : stopAutoRefresh();
+        });
+
+        // spin the refresh icon on manual click
+        document.getElementById('refresh-btn').addEventListener('click', () => {
+            const icon = document.getElementById('refresh-icon');
+            icon.classList.remove('refresh-spin');
+            void icon.offsetWidth; // reflow
+            icon.classList.add('refresh-spin');
+        });
+
+        // update counter after each htmx swap
+        document.body.addEventListener('htmx:afterSwap', (e) => {
+            if (e.detail.target.id === 'service-list') {
+                const rows = e.detail.target.querySelectorAll('tbody tr');
+                document.getElementById('service-count').textContent = rows.length;
+            }
+        });
+
+        // start auto-refresh
+        startAutoRefresh();
+    </script>
+</body>
+</html>
