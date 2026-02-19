@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -14,6 +17,16 @@ import (
 	"strings"
 	"syscall"
 	"time"
+)
+
+// Config holds the application configuration loaded from homepage_config.json.
+type Config struct {
+	Password string `json:"password"`
+}
+
+var (
+	appConfig    Config
+	sessionToken string
 )
 
 type Service struct {
@@ -249,11 +262,89 @@ func handleRestart(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, pageData{Host: hostOnly(r), Services: services})
 }
 
+func loadConfig() Config {
+	data, err := os.ReadFile("../configs/homepage_config.json")
+	if err != nil {
+		log.Fatalf("Failed to read config: %v", err)
+	}
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		log.Fatalf("Failed to parse config: %v", err)
+	}
+	if cfg.Password == "" {
+		log.Fatal("Password must be set in homepage_config.json")
+	}
+	return cfg
+}
+
+func generateSessionToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		log.Fatalf("Failed to generate session token: %v", err)
+	}
+	return hex.EncodeToString(b)
+}
+
+func requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("session")
+		if err != nil || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(sessionToken)) != 1 {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		password := r.FormValue("password")
+		if subtle.ConstantTimeCompare([]byte(password), []byte(appConfig.Password)) == 1 {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "session",
+				Value:    sessionToken,
+				Path:     "/",
+				HttpOnly: true,
+				SameSite: http.SameSiteStrictMode,
+			})
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		tmpl := template.Must(template.ParseFiles("templates/login.html"))
+		tmpl.Execute(w, map[string]string{"Error": "Invalid password"})
+		return
+	}
+
+	tmpl := template.Must(template.ParseFiles("templates/login.html"))
+	tmpl.Execute(w, map[string]string{})
+}
+
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
 func main() {
-	http.HandleFunc("/", handleIndex)
-	http.HandleFunc("/services", handleServices)
-	http.HandleFunc("/stop", handleStop)
-	http.HandleFunc("/restart", handleRestart)
+	appConfig = loadConfig()
+	sessionToken = generateSessionToken()
+
+	http.HandleFunc("/login", handleLogin)
+	http.HandleFunc("/logout", handleLogout)
+	http.HandleFunc("/", requireAuth(handleIndex))
+	http.HandleFunc("/services", requireAuth(handleServices))
+	http.HandleFunc("/stop", requireAuth(handleStop))
+	http.HandleFunc("/restart", requireAuth(handleRestart))
 
 	port := "8899"
 	fmt.Printf("Homepage running at http://localhost:%s\n", port)
