@@ -1,4 +1,4 @@
-{{if .}}
+{{if .Services}}
 <table class="table table-hover align-middle mb-0">
     <thead>
         <tr>
@@ -10,7 +10,8 @@
         </tr>
     </thead>
     <tbody>
-        {{range .}}
+        {{$host := .Host}}
+        {{range .Services}}
         <tr>
             <td><span class="badge bg-success pulse-dot">Live</span></td>
             <td class="fw-semibold">{{.Name}}</td>
@@ -18,7 +19,7 @@
             <td><code>{{.Address}}</code></td>
             <td class="text-end">
                 <div class="btn-group btn-group-sm" role="group">
-                    <a href="http://localhost:{{.Port}}" target="_blank" class="btn btn-outline-primary" title="Open in browser">
+                    <a href="http://{{$host}}:{{.Port}}" target="_blank" class="btn btn-outline-primary" title="Open in browser">
                         Open :{{.Port}}
                     </a>
                     <button class="btn btn-outline-warning"

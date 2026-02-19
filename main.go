@@ -86,13 +86,28 @@ func getServices() ([]Service, error) {
 	return services, nil
 }
 
+// pageData holds template data including the request hostname.
+type pageData struct {
+	Host     string
+	Services []Service
+}
+
+// hostOnly extracts just the hostname (no port) from the request.
+func hostOnly(r *http.Request) string {
+	host := r.Host
+	if i := strings.LastIndex(host, ":"); i != -1 {
+		host = host[:i]
+	}
+	return host
+}
+
 func handleIndex(w http.ResponseWriter, r *http.Request) {
 	tmpl := template.Must(template.ParseFiles("templates/index.html"))
 	services, err := getServices()
 	if err != nil {
 		log.Printf("Error getting services: %v", err)
 	}
-	tmpl.Execute(w, services)
+	tmpl.Execute(w, pageData{Host: hostOnly(r), Services: services})
 }
 
 func handleServices(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +119,7 @@ func handleServices(w http.ResponseWriter, r *http.Request) {
 
 	if r.Header.Get("HX-Request") == "true" {
 		tmpl := template.Must(template.ParseFiles("templates/partials/service_table.html"))
-		tmpl.Execute(w, services)
+		tmpl.Execute(w, pageData{Host: hostOnly(r), Services: services})
 		return
 	}
 
@@ -178,7 +193,7 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 	time.Sleep(500 * time.Millisecond)
 	services, _ := getServices()
 	tmpl := template.Must(template.ParseFiles("templates/partials/service_table.html"))
-	tmpl.Execute(w, services)
+	tmpl.Execute(w, pageData{Host: hostOnly(r), Services: services})
 }
 
 func handleRestart(w http.ResponseWriter, r *http.Request) {
@@ -231,7 +246,7 @@ func handleRestart(w http.ResponseWriter, r *http.Request) {
 	time.Sleep(1 * time.Second)
 	services, _ := getServices()
 	tmpl := template.Must(template.ParseFiles("templates/partials/service_table.html"))
-	tmpl.Execute(w, services)
+	tmpl.Execute(w, pageData{Host: hostOnly(r), Services: services})
 }
 
 func main() {
